@@ -4,6 +4,7 @@ README.md
 ALLOWLIST.txt
 requirements.txt
 generative_model.ipynb
+generative_ai.ipynb
 scripts/download_nhm_images.py
 data/manifest_fixed_20261013.csv
 scripts/build_working_set.py
