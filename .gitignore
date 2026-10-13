@@ -17,6 +17,9 @@
 data/*
 datasets/
 
+# Run outputs, rebuilt by every run of the notebook: checkpoints and saved figures
+outputs/
+
 # Model weights
 *.pt
 *.pth
