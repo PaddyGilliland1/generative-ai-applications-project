@@ -167,6 +167,11 @@ FLAG_PAPER = 0.05
 FLAG_AREA = (0.05, 0.6)
 SEED = 2026
 HELD_OUT_FRACTION = 0.10
+SPLIT_FIELDS = [
+    "row", "file_name", "part", "flagged", "flag_reasons", "edge",
+    "edge_side", "paper", "paper_side", "area", "chosen", "in_array",
+    "array_row", "flagged_row",
+]
 TABLE_FIELDS = [
     "row", "file_name", "part", "crop_failed", "in_array", "array_row"
 ]
@@ -1437,6 +1442,90 @@ def build_array(paths, size=SIZE, workers=8, rule="threshold"):
     return out
 
 
+def _flag_file(job):
+    """Load, crop and flag one photograph; job is (path, size), for a pool."""
+    path, size = job
+    return crop_and_flag(load_photograph(path), size)
+
+
+def build_flagged(paths, size=SIZE, workers=8):
+    """Every path cropped by the segment rule, with its signals and flag.
+
+    Returns (array, signals, reasons): a new uint8 array of shape
+    (len(paths), size, size, 3) in the paths' order, flagged crops
+    included, and a list of each crop's signals and of its reasons. With
+    more than one worker the photographs are cropped in spawned processes,
+    which gives the same results as one process.
+    """
+    jobs = [(Path(p), size) for p in paths]
+    out = np.empty((len(jobs), size, size, 3), dtype=np.uint8)
+    signals, reasons = [], []
+    if workers <= 1 or len(jobs) < 2:
+        results = map(_flag_file, jobs)
+        for k, (image, sig, why) in enumerate(results):
+            out[k] = image
+            signals.append(sig)
+            reasons.append(why)
+        return out, signals, reasons
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
+        results = pool.map(_flag_file, jobs, chunksize=16)
+        for k, (image, sig, why) in enumerate(results):
+            out[k] = image
+            signals.append(sig)
+            reasons.append(why)
+    return out, signals, reasons
+
+
+def split_table(names, signals, reasons, held_out):
+    """One row per manifest name, in order, with its part and its flag.
+
+    A flagged row stays in the table with its reasons and signals, is left
+    out of its part's array and is numbered in the flagged crops' array
+    instead. array_row counts within each part's own array.
+    """
+    table, next_row, next_flagged = [], {"training": 0, "held_out": 0}, 0
+    for k, name in enumerate(names):
+        part = "held_out" if name in held_out else "training"
+        flagged = bool(reasons[k])
+        sig = signals[k]
+        table.append({
+            "row": k,
+            "file_name": name,
+            "part": part,
+            "flagged": int(flagged),
+            "flag_reasons": "; ".join(reasons[k]),
+            "edge": round(sig["edge"], 4),
+            "edge_side": sig["edge_side"],
+            "paper": round(sig["paper"], 4),
+            "paper_side": sig["paper_side"],
+            "area": round(sig["area"], 4),
+            "chosen": sig["chosen"],
+            "in_array": int(not flagged),
+            "array_row": "" if flagged else next_row[part],
+            "flagged_row": next_flagged if flagged else "",
+        })
+        if flagged:
+            next_flagged += 1
+        else:
+            next_row[part] += 1
+    return table
+
+
+def split_totals(table):
+    """Each part's count with and without the flagged rows."""
+    counts = {}
+    for part in ("training", "held_out", "all"):
+        rows = [r for r in table if part in ("all", r["part"])]
+        flagged = sum(r["flagged"] for r in rows)
+        counts[part] = {
+            "with_flagged": len(rows),
+            "flagged": flagged,
+            "without_flagged": len(rows) - flagged,
+        }
+    return counts
+
+
 def held_out_count(n):
     """The number of held-out images: a tenth of n, rounded, halves up."""
     return int(math.floor(HELD_OUT_FRACTION * n + 0.5))
@@ -1528,11 +1617,11 @@ def _save_array(path, array):
     os.replace(part, path)
 
 
-def _save_table(path, table):
+def _save_table(path, table, fields=TABLE_FIELDS):
     """Write the row table as CSV, through a .part file as the array is."""
     part = path.with_name(path.name + ".part")
     with open(part, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=TABLE_FIELDS)
+        writer = csv.DictWriter(fh, fieldnames=fields)
         writer.writeheader()
         writer.writerows(table)
     os.replace(part, path)
@@ -1571,7 +1660,25 @@ def main(argv=None):
         "--table",
         help="the row table, by default beside the array as _rows.csv",
     )
+    split = sub.add_parser(
+        "split",
+        help="crop and flag every photograph by the segment rule, and save "
+        "the training and held-out arrays without the flagged crops",
+    )
+    split.add_argument(
+        "--manifest", default="data/manifest_fixed_20261013.csv"
+    )
+    split.add_argument("--raw-dir", default="data/raw")
+    split.add_argument(
+        "--out", default="data/nhm_butterflies_64",
+        help="the stem: _training.npy, _held_out.npy, _flagged.npy and "
+        "_rows.csv are added to it",
+    )
+    split.add_argument("--size", type=int, default=SIZE)
+    split.add_argument("--workers", type=int, default=8)
     args = parser.parse_args(argv)
+    if args.command == "split":
+        return _split(args)
 
     out = Path(args.out)
     table_path = (
@@ -1643,6 +1750,75 @@ def main(argv=None):
         print(
             f"{label} images: {c['with_failures']} with the crop failures, "
             f"{c['without_failures']} without."
+        )
+    return 0
+
+
+def _split(args):
+    """The split command: crop and flag the fixed set, then save each part.
+
+    Returns 0 on success and 1 on a refusal, when nothing is written.
+    """
+    stem = str(args.out)
+    paths = {
+        "training": Path(stem + "_training.npy"),
+        "held_out": Path(stem + "_held_out.npy"),
+        "flagged": Path(stem + "_flagged.npy"),
+        "rows": Path(stem + "_rows.csv"),
+    }
+    for path in paths.values():
+        if path.exists():
+            print(
+                f"{path} exists, and I never overwrite the working arrays "
+                "or their table.",
+                file=sys.stderr,
+            )
+            return 1
+    with open(args.manifest, newline="", encoding="utf-8") as fh:
+        names = [row["file_name"] for row in csv.DictReader(fh)]
+    raw = Path(args.raw_dir)
+    missing = [raw / n for n in names if not (raw / n).is_file()]
+    if missing:
+        print(
+            f"{len(missing)} photographs in the manifest are not on disk, "
+            f"the first {missing[0]}. Nothing was written.",
+            file=sys.stderr,
+        )
+        return 1
+    start = time.perf_counter()
+    array, signals, reasons = build_flagged(
+        [raw / n for n in names], size=args.size, workers=args.workers
+    )
+    seconds = time.perf_counter() - start
+    table = split_table(names, signals, reasons, held_out_names(names))
+    for part in ("training", "held_out"):
+        rows = [r["row"] for r in table if r["in_array"] and r["part"] == part]
+        _save_array(paths[part], array[rows])
+    _save_array(paths["flagged"], array[[r["row"] for r in table
+                                         if r["flagged"]]])
+    _save_table(paths["rows"], table, SPLIT_FIELDS)
+    print(
+        f"Cropped and flagged {len(names)} photographs by the segment rule "
+        f"in {seconds:.1f} s with {args.workers} worker processes."
+    )
+    for part in ("training", "held_out", "flagged"):
+        path = paths[part]
+        size = path.stat().st_size
+        print(
+            f"{path}: shape {np.load(path, mmap_mode='r').shape}, {size} "
+            f"bytes ({size / 2 ** 20:.1f} MiB), SHA-256 {file_sha256(path)}"
+        )
+    counts = split_totals(table)
+    print(
+        f"{counts['all']['flagged']} flagged in {paths['rows']}, left out "
+        "of both arrays."
+    )
+    for part, label in (("training", "Training"), ("held_out", "Held-out"),
+                        ("all", "All")):
+        c = counts[part]
+        print(
+            f"{label} images: {c['with_flagged']} with the flagged crops, "
+            f"{c['without_flagged']} without ({c['flagged']} flagged)."
         )
     return 0
 
