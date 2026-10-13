@@ -61,6 +61,14 @@ than by cutting fixed sections away. On a 300-pixel copy, median filtered:
    ruler, the label line and any white paper nearer than the margin, and is
    clipped to the photograph. It is not squared here.
 
+The crop failure flag reads the segment rule's own marks, from the same
+pass that gives the box. A crop is flagged when no specimen was found, when
+the specimen is under 5 or over 60 per cent of the tray inside the ruler
+strips, when marks cross more than a third of a side of the box (a wing cut
+by it, or a label running into it), or when white paper lies along more
+than 5 per cent of a side, away from the specimen's own pale fringe. The
+setting was chosen once on the 200 development images and not tuned after.
+
 Every rule's crop is padded to a square with the tray's colour, the median
 of its border pixels, so the specimen keeps its shape, then resized to 64 by
 64 with Pillow's bilinear filter.
@@ -150,6 +158,13 @@ SEG_PAPER_MIN = 0.02
 # corner, below a ruler on the left and to the right of one along the foot.
 SEG_LABEL_SIDE = {"left": "bottom", "right": "top", "bottom": "right",
                   "top": "left"}
+# The crop failure flag, set once on the 200 development images and not
+# tuned after: marks crossing more than a third of a box side, white paper
+# along more than 5 per cent of one, or a specimen outside 5 to 60 per cent
+# of the tray inside the ruler strips.
+FLAG_EDGE = 1 / 3
+FLAG_PAPER = 0.05
+FLAG_AREA = (0.05, 0.6)
 SEED = 2026
 HELD_OUT_FRACTION = 0.10
 TABLE_FIELDS = [
@@ -906,7 +921,7 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
         and not (line is not None and _beyond(r["box"], line, side, slack))
     ]
     out = {"labels": found, "line": line, "paper_line": paper_line,
-           "chosen": []}
+           "chosen": [], "regions": regions}
     if not left:
         return out
     if side is not None:
@@ -1039,6 +1054,20 @@ def segment_box(rgb):
     the label line, and is clipped to the photograph. It is not squared:
     pad_to_square does that.
     """
+    return segment_parts(rgb)["box"]
+
+
+def segment_parts(rgb):
+    """The segment rule's box with what the rule found on the way, as a dict.
+
+    box is segment_box's crop. The rest is on the small copy: scale is its
+    (x, y) step in photograph pixels, work the part left inside the ruler
+    strips, side the label side or None, clean the marks the regions are
+    cut from, regions and labels the regions and the label-like ones, chosen
+    whether a specimen was found, keep its marks and own their box, both
+    None when nothing was. paper marks white, plain pixels. The crop flag
+    reads these, so the box and the flag come from one pass of the rule.
+    """
     _check_rgb(rgb)
     h, w = rgb.shape[:2]
     small = _shrunk(rgb, SEG_SIDE)
@@ -1158,9 +1187,17 @@ def segment_box(rgb):
                 labels += again["labels"]
 
     sx, sy = w / sw, h / sh
+    parts = {"scale": (sx, sy), "work": work, "side": side, "clean": clean,
+             "core": core,
+             "regions": picked["regions"], "labels": labels,
+             "chosen": bool(picked["chosen"]), "keep": None, "own": None,
+             "paper": (grey > white) & (sat <= 60)}
     if not picked["chosen"]:
-        return (int(x0 * sx), int(y0 * sy), min(w, int(np.ceil(x1 * sx))),
-                min(h, int(np.ceil(y1 * sy))))
+        parts["box"] = (int(x0 * sx), int(y0 * sy),
+                        min(w, int(np.ceil(x1 * sx))),
+                        min(h, int(np.ceil(y1 * sy))))
+        return parts
+    parts.update(keep=picked["keep"], own=picked["box"])
     bx0, by0, bx1, by1 = picked["box"]
     bx0, bx1, by0, by1 = bx0 * sx, bx1 * sx, by0 * sy, by1 * sy
     m = SEG_MARGIN * max(bx1 - bx0, by1 - by0)
@@ -1226,10 +1263,105 @@ def segment_box(rgb):
                 bottom = value
             else:
                 top = value
-    return (max(0, left), max(0, top), min(w, right), min(h, bottom))
+    parts["box"] = (max(0, left), max(0, top), min(w, right), min(h, bottom))
+    return parts
 
 
 RULES = {"threshold": crop_box, "fixed": fixed_box, "segment": segment_box}
+
+
+def _side_lines(box, scale, shape):
+    """The small copy's line just inside each side of box, as index pairs.
+
+    box is in photograph pixels and scale is the small copy's (x, y) step.
+    A side whose line falls outside the small copy is left out.
+    """
+    sx, sy = scale
+    sh, sw = shape
+    left, top, right, bottom = box
+    li, ti = int(np.ceil(left / sx)), int(np.ceil(top / sy))
+    ri, bi = int(np.floor(right / sx)), int(np.floor(bottom / sy))
+    lines = {}
+    if ti < bi and 0 <= li < sw:
+        lines["left"] = (slice(ti, bi), li)
+    if li < ri and 0 <= ti < sh:
+        lines["top"] = (ti, slice(li, ri))
+    if ti < bi and 0 < ri <= sw:
+        lines["right"] = (slice(ti, bi), ri - 1)
+    if li < ri and 0 < bi <= sh:
+        lines["bottom"] = (bi - 1, slice(li, ri))
+    return lines
+
+
+def _largest_share(mask, lines):
+    """The largest share of any line that mask marks, and that line's side."""
+    best, where = 0.0, ""
+    for side, at in lines.items():
+        line = mask[at]
+        if line.size and line.mean() > best:
+            best, where = float(line.mean()), side
+    return best, where
+
+
+def crop_signals(parts):
+    """What the segment rule's own marks say about its box, as a dict.
+
+    edge is the largest share of a box side, read on the small copy's line
+    just inside it, that the marks cross, and edge_side is that side: a
+    wing cut by the box, or a label running into it. paper is the same for
+    white paper further from the specimen than its own pale fringe, as the
+    top of a label is. area is the specimen's share of the tray inside the
+    ruler strips, and chosen is 1 when a specimen was found at all.
+    """
+    core, paper = parts["core"], parts["paper"]
+    keep = parts["keep"]
+    if keep is None:
+        keep = np.zeros_like(core)
+    near = keep
+    for _ in range(SEG_FRINGE):
+        near = _grow(near)
+    lines = _side_lines(parts["box"], parts["scale"], core.shape)
+    edge, edge_side = _largest_share(core, lines)
+    stray, paper_side = _largest_share(paper & ~near, lines)
+    x0, y0, x1, y1 = parts["work"]
+    return {
+        "chosen": int(parts["chosen"]),
+        "area": float(keep.sum() / max(1, (x1 - x0) * (y1 - y0))),
+        "edge": edge,
+        "edge_side": edge_side,
+        "paper": stray,
+        "paper_side": paper_side,
+    }
+
+
+def crop_flag(signals):
+    """The reasons the crop is flagged as a failure, as a list; empty if none.
+
+    Every line is a strict inequality, so a value equal to it passes.
+    """
+    reasons = []
+    if not signals["chosen"]:
+        reasons.append("no specimen")
+    elif not FLAG_AREA[0] <= signals["area"] <= FLAG_AREA[1]:
+        reasons.append("specimen area")
+    if signals["edge"] > FLAG_EDGE:
+        reasons.append("edge crossed")
+    if signals["paper"] > FLAG_PAPER:
+        reasons.append("paper at edge")
+    return reasons
+
+
+def crop_and_flag(rgb, size=SIZE):
+    """The segment rule's size by size crop, its signals and its flag.
+
+    One pass of the rule gives all three, so the flag always describes the
+    crop it sits beside. Returns (image, signals, reasons).
+    """
+    parts = segment_parts(rgb)
+    left, top, right, bottom = parts["box"]
+    image = square_and_resize(rgb[top:bottom, left:right], size)
+    signals = crop_signals(parts)
+    return image, signals, crop_flag(signals)
 
 
 def pad_to_square(rgb):
