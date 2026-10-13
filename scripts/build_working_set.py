@@ -35,20 +35,34 @@ The crop rule, a function of the photograph alone with no learned part:
    steps 1 and 2 left. Where the padded specimen is larger than that, the
    crop runs its full length on that side and is not square.
 
-Then the crop is resized to 64 by 64 with Pillow's bilinear filter, and the
-working array holds one row per photograph of the fixed manifest, in the
-manifest's order, as uint8.
+The fixed box, A4's alternative when the threshold rule fails too often, is
+the tray's specimen area at the fixed proportions the cuts fall back to: right
+of the ruler and above the labels in portrait, left of the labels and above
+the wall and ruler in landscape. It reads nothing but the photograph's size.
 
-    python scripts/build_working_set.py build \\
+Either way the crop is padded to a square with the tray's colour, the median
+of its border pixels, so the specimen keeps its shape, then resized to 64 by
+64 with Pillow's bilinear filter.
+
+The working array holds one row per photograph of the fixed manifest, in the
+manifest's order, as uint8, except that crop failures are left out by
+default. A crop failure is a row a verdicts file (file_name and verdict
+columns) marks "fail". Every manifest row stays in the table written beside
+the array, with its part (training or held out, by the seed-2026 split), its
+failure flag and its row in the array, so nothing is removed silently.
+
+    python scripts/build_working_set.py build --rule threshold \\
         --manifest data/manifest_fixed_20261013.csv --raw-dir data/raw \\
-        --out data/nhm_butterflies_64.npy --workers 8
+        --out data/nhm_butterflies_64.npy --crop-failures verdicts.csv \\
+        --workers 8
 
-Needs NumPy and Pillow. It never overwrites an existing array.
+Needs NumPy and Pillow. It never overwrites an existing array or table.
 """
 
 import argparse
 import csv
 import hashlib
+import math
 import multiprocessing
 import os
 import sys
@@ -73,16 +87,21 @@ PORTRAIT_LEFT = 0.25
 PORTRAIT_BOTTOM = 0.64
 LANDSCAPE_RIGHT = 0.665
 LANDSCAPE_BOTTOM = 0.70
+SEED = 2026
+HELD_OUT_FRACTION = 0.10
+TABLE_FIELDS = [
+    "row", "file_name", "part", "crop_failed", "in_array", "array_row"
+]
 
 
-def _check_rgb(rgb):
+def _check_rgb(rgb, smallest=2):
     """Refuse anything but an RGB uint8 array of shape (height, width, 3)."""
     if (
         not isinstance(rgb, np.ndarray)
         or rgb.ndim != 3
         or rgb.shape[2] != 3
         or rgb.dtype != np.uint8
-        or min(rgb.shape[:2]) < 2
+        or min(rgb.shape[:2]) < smallest
     ):
         raise ValueError(
             "expected an RGB uint8 array of shape (height, width, 3)"
@@ -384,11 +403,59 @@ def crop_box(rgb):
     return (rx0 + x0, ry0 + y0, rx0 + x1, ry0 + y1)
 
 
-def crop_and_resize(rgb, size=SIZE):
-    """A new size by size uint8 image of the specimen, by the crop rule."""
-    box = crop_box(rgb)
-    crop = Image.fromarray(rgb).crop(box)
-    return np.array(crop.resize((size, size), Image.BILINEAR), dtype=np.uint8)
+def fixed_box(rgb):
+    """The fixed box for rgb's orientation, as (left, top, right, bottom).
+
+    The unit tray is built so that every specimen is photographed with its
+    labels in the same layout (Paterson et al., 2016, p. 4), so the box is
+    that layout's specimen area, at the proportions crop_box's cuts fall back
+    to. Its edges are whole pixels taken as crop_box takes them, rounded
+    down, so the box never reaches past a cut line. A photograph taller than
+    it is wide is read as portrait.
+    """
+    _check_rgb(rgb)
+    h, w = rgb.shape[:2]
+    if h > w:
+        return (int(PORTRAIT_LEFT * w), 0, w, int(PORTRAIT_BOTTOM * h))
+    return (0, 0, int(LANDSCAPE_RIGHT * w), int(LANDSCAPE_BOTTOM * h))
+
+
+RULES = {"threshold": crop_box, "fixed": fixed_box}
+
+
+def pad_to_square(rgb):
+    """A new square copy of rgb, padded with the tray's colour.
+
+    The colour is each channel's median over rgb's border pixels. The padding
+    is split evenly, the odd pixel after, so the subject stays centred and
+    keeps its shape when the square is resized.
+    """
+    _check_rgb(rgb, smallest=1)
+    h, w = rgb.shape[:2]
+    side = max(h, w)
+    border = np.concatenate([rgb[0], rgb[-1], rgb[:, 0], rgb[:, -1]])
+    out = np.empty((side, side, 3), dtype=np.uint8)
+    out[:] = np.round(np.median(border, axis=0)).astype(np.uint8)
+    y0, x0 = (side - h) // 2, (side - w) // 2
+    out[y0:y0 + h, x0:x0 + w] = rgb
+    return out
+
+
+def square_and_resize(crop, size=SIZE):
+    """A new size by size uint8 image: crop padded to a square and resized."""
+    square = Image.fromarray(pad_to_square(crop))
+    resized = square.resize((size, size), Image.BILINEAR)
+    return np.array(resized, dtype=np.uint8)
+
+
+def crop_and_resize(rgb, size=SIZE, rule="threshold"):
+    """A new size by size uint8 image of the specimen, by the named rule."""
+    if rule not in RULES:
+        raise ValueError(
+            f"unknown crop rule {rule!r}, expected one of {sorted(RULES)}"
+        )
+    left, top, right, bottom = RULES[rule](rgb)
+    return square_and_resize(rgb[top:bottom, left:right], size)
 
 
 def load_photograph(path):
@@ -398,19 +465,23 @@ def load_photograph(path):
 
 
 def _crop_file(job):
-    """Load and crop one photograph; job is (path, size), for the pool."""
-    path, size = job
-    return crop_and_resize(load_photograph(path), size)
+    """Load and crop one photograph; job is (path, size, rule), for a pool."""
+    path, size, rule = job
+    return crop_and_resize(load_photograph(path), size, rule)
 
 
-def build_array(paths, size=SIZE, workers=8):
+def build_array(paths, size=SIZE, workers=8, rule="threshold"):
     """The working array: one cropped size by size image per path, in order.
 
     Returns a new uint8 array of shape (len(paths), size, size, 3). With
     more than one worker the photographs are cropped in spawned processes,
     which gives the same bytes as one process.
     """
-    jobs = [(Path(p), size) for p in paths]
+    if rule not in RULES:
+        raise ValueError(
+            f"unknown crop rule {rule!r}, expected one of {sorted(RULES)}"
+        )
+    jobs = [(Path(p), size, rule) for p in paths]
     out = np.empty((len(jobs), size, size, 3), dtype=np.uint8)
     if workers <= 1 or len(jobs) < 2:
         for k, job in enumerate(jobs):
@@ -425,6 +496,80 @@ def build_array(paths, size=SIZE, workers=8):
     return out
 
 
+def held_out_count(n):
+    """The number of held-out images: a tenth of n, rounded, halves up."""
+    return int(math.floor(HELD_OUT_FRACTION * n + 0.5))
+
+
+def held_out_names(names, seed=SEED):
+    """The held-out file names, as a set.
+
+    They are the first held_out_count of NumPy's default_rng(seed)
+    permutation over the names sorted, which is the fixed manifest's own
+    order, so the order the names arrive in does not move the split.
+    """
+    ordered = sorted(names)
+    perm = np.random.default_rng(seed).permutation(len(ordered))
+    return {ordered[i] for i in perm[:held_out_count(len(ordered))]}
+
+
+def read_crop_failures(path):
+    """The file names a verdicts CSV marks "fail", as a set.
+
+    The CSV needs file_name and verdict columns. A doubtful crop, or any
+    other verdict, is not a failure.
+    """
+    with open(path, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        if not {"file_name", "verdict"} <= set(reader.fieldnames or ()):
+            raise ValueError(f"{path} needs file_name and verdict columns")
+        return {
+            row["file_name"]
+            for row in reader
+            if row["verdict"].strip().lower() == "fail"
+        }
+
+
+def row_table(names, failures, held_out, exclude=True):
+    """One row per manifest name, in order, saying where it went.
+
+    Each row has the manifest row, the file name, the part (training or
+    held_out), crop_failed (1 or 0), in_array (1 or 0) and array_row, which
+    is blank for a row left out. With exclude, a crop failure is left out
+    of the array; without it, it is kept and only flagged.
+    """
+    table, next_row = [], 0
+    for k, name in enumerate(names):
+        failed = name in failures
+        kept = not (failed and exclude)
+        table.append({
+            "row": k,
+            "file_name": name,
+            "part": "held_out" if name in held_out else "training",
+            "crop_failed": int(failed),
+            "in_array": int(kept),
+            "array_row": next_row if kept else "",
+        })
+        next_row += kept
+    return table
+
+
+def totals(table):
+    """Each part's count with and without the crop failures, and the array's
+    row count."""
+    counts = {}
+    for part in ("training", "held_out", "all"):
+        rows = [r for r in table if part in ("all", r["part"])]
+        failed = sum(r["crop_failed"] for r in rows)
+        counts[part] = {
+            "with_failures": len(rows),
+            "failures": failed,
+            "without_failures": len(rows) - failed,
+        }
+    counts["in_array"] = sum(r["in_array"] for r in table)
+    return counts
+
+
 def file_sha256(path):
     """The SHA-256 of the file at path, as hexadecimal."""
     digest = hashlib.sha256()
@@ -434,8 +579,26 @@ def file_sha256(path):
     return digest.hexdigest()
 
 
+def _save_array(path, array):
+    """Save array through a .part file, so a stopped build leaves none."""
+    part = path.with_name(path.name + ".part")
+    with open(part, "wb") as fh:
+        np.save(fh, array)
+    os.replace(part, path)
+
+
+def _save_table(path, table):
+    """Write the row table as CSV, through a .part file as the array is."""
+    part = path.with_name(path.name + ".part")
+    with open(part, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=TABLE_FIELDS)
+        writer.writeheader()
+        writer.writerows(table)
+    os.replace(part, path)
+
+
 def main(argv=None):
-    """Build the working array from the fixed manifest.
+    """Build the working array and its table from the fixed manifest.
 
     Returns 0 on success and 1 on a refusal, when nothing is written.
     """
@@ -451,19 +614,42 @@ def main(argv=None):
     build.add_argument("--out", default="data/nhm_butterflies_64.npy")
     build.add_argument("--size", type=int, default=SIZE)
     build.add_argument("--workers", type=int, default=8)
+    build.add_argument(
+        "--rule", required=True, choices=sorted(RULES),
+        help="the threshold rule or the fixed box, as A4 rules",
+    )
+    build.add_argument(
+        "--crop-failures",
+        help="a verdicts CSV; its rows marked fail are the crop failures",
+    )
+    build.add_argument(
+        "--failures", choices=("exclude", "include"), default="exclude",
+        help="leave crop failures out of the array (default) or keep them",
+    )
+    build.add_argument(
+        "--table",
+        help="the row table, by default beside the array as _rows.csv",
+    )
     args = parser.parse_args(argv)
 
     out = Path(args.out)
-    if out.exists():
-        print(
-            f"{out} exists, and I never overwrite the working array.",
-            file=sys.stderr,
-        )
-        return 1
+    table_path = (
+        Path(args.table)
+        if args.table
+        else out.with_name(out.stem + "_rows.csv")
+    )
+    for path in (out, table_path):
+        if path.exists():
+            print(
+                f"{path} exists, and I never overwrite the working array "
+                "or its table.",
+                file=sys.stderr,
+            )
+            return 1
     with open(args.manifest, newline="", encoding="utf-8") as fh:
         names = [row["file_name"] for row in csv.DictReader(fh)]
-    paths = [Path(args.raw_dir) / name for name in names]
-    missing = [p for p in paths if not p.is_file()]
+    raw = Path(args.raw_dir)
+    missing = [raw / n for n in names if not (raw / n).is_file()]
     if missing:
         print(
             f"{len(missing)} photographs in the manifest are not on disk, "
@@ -471,19 +657,52 @@ def main(argv=None):
             file=sys.stderr,
         )
         return 1
-
-    start = time.perf_counter()
-    array = build_array(paths, size=args.size, workers=args.workers)
-    seconds = time.perf_counter() - start
-    part = out.with_name(out.name + ".part")
-    with open(part, "wb") as fh:
-        np.save(fh, array)
-    os.replace(part, out)
-    print(
-        f"Built {len(paths)} images into {out}: shape {array.shape}, "
-        f"{out.stat().st_size} bytes, SHA-256 {file_sha256(out)}, "
-        f"{seconds:.1f} s with {args.workers} worker processes."
+    failures = (
+        read_crop_failures(args.crop_failures) if args.crop_failures else set()
     )
+    # A failure that names no manifest row would flag nothing, so a list for
+    # another manifest is refused rather than quietly ignored.
+    stray = sorted(failures - set(names))
+    if stray:
+        print(
+            f"{len(stray)} crop failures are not in the manifest, the first "
+            f"{stray[0]}. Nothing was written.",
+            file=sys.stderr,
+        )
+        return 1
+
+    exclude = args.failures == "exclude"
+    table = row_table(names, failures, held_out_names(names), exclude)
+    kept = [raw / r["file_name"] for r in table if r["in_array"]]
+    start = time.perf_counter()
+    array = build_array(
+        kept, size=args.size, workers=args.workers, rule=args.rule
+    )
+    seconds = time.perf_counter() - start
+    _save_array(out, array)
+    _save_table(table_path, table)
+    counts = totals(table)
+    print(
+        f"Built {len(kept)} images into {out} by the {args.rule} rule: "
+        f"shape {array.shape}, {out.stat().st_size} bytes, SHA-256 "
+        f"{file_sha256(out)}, {seconds:.1f} s with {args.workers} worker "
+        f"processes."
+    )
+    n = counts["all"]["failures"]
+    if args.crop_failures:
+        where = "left out of" if exclude else "kept in"
+        print(
+            f"{n} crop failure{'s' if n != 1 else ''} flagged in "
+            f"{table_path}, {where} the array."
+        )
+    else:
+        print(f"No crop-failure list was given, so {table_path} flags no row.")
+    for part, label in (("training", "Training"), ("held_out", "Held-out")):
+        c = counts[part]
+        print(
+            f"{label} images: {c['with_failures']} with the crop failures, "
+            f"{c['without_failures']} without."
+        )
     return 0
 
 
