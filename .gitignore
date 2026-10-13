@@ -1,0 +1,44 @@
+# Data files stay local by default. To publish one, add a "!file.csv" line at the end of this
+# file and list the same path in ALLOWLIST.txt.
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.parquet
+*.feather
+*.zip
+*.gz
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+data/
+datasets/
+
+# Model weights
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# Environments and secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Jupyter and Python caches
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+
+# Office lock files and system noise
+~$*
+.~lock.*
+.DS_Store
+Thumbs.db
+
+# PDF files are not ignored: the report PDF is a deliverable.

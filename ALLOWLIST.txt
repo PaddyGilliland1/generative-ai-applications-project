@@ -1,0 +1,8 @@
+# The paths published in this repository, one per line, from the repository root.
+README.md
+.gitignore
+ALLOWLIST.txt
+requirements.txt
+generative_model.ipynb
+scripts/download_nhm_images.py
+tests/test_download_nhm_images.py
