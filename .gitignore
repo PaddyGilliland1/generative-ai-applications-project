@@ -14,7 +14,7 @@
 *.pickle
 *.h5
 *.hdf5
-data/
+data/*
 datasets/
 
 # Model weights
@@ -42,3 +42,4 @@ __pycache__/
 Thumbs.db
 
 # PDF files are not ignored: the report PDF is a deliverable.
+!data/manifest_fixed_20261013.csv
