@@ -179,6 +179,3 @@ Index, and the file was then written from that environment with:
 ```bash
 pip freeze > requirements.txt
 ```
-
-A second fresh environment, installed from `requirements.txt` alone, ran the notebook top to bottom
-again.
