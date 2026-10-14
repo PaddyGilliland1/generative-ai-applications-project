@@ -36,7 +36,7 @@ four to six lines, for example **The task:**, **The data:**, **The model:**, **T
 - The Museum cannot warrant the quality or accuracy of the data, and this work has no endorsement,
   affiliation, support or approval from the Museum. For training, the photographs are changed:
   cropped to the specimen and scaled to 64 by 64 pixels. The ten in `data/figure_photos/` are
-  unchanged.
+  changed too: labels masked.
 - Selection: order Lepidoptera, project iCollections, the six butterfly families one query at a
   time, each record with one CC BY 4.0 specimen photograph, in a seed-2026 random order, taken until
   22,000 photographs had downloaded and verified.
@@ -73,9 +73,11 @@ four to six lines, for example **The task:**, **The data:**, **The model:**, **T
 
 - In this repository: the notebook under both names, the fixed manifest, both scripts,
   `requirements.txt`, this README, and the ten photographs Figures 1 and 2 read, in
-  `data/figure_photos/` (3.3 MiB), with `ATTRIBUTION.md` giving the Museum's CC BY 4.0
-  attribution line for each. They are the Museum's photographs as downloaded, unchanged, so their
-  labels show. The notebook paints the label section grey when it shows them.
+  `data/figure_photos/` (2.2 MiB), with `ATTRIBUTION.md` giving the Museum's CC BY 4.0
+  attribution line for each. They are modified: labels masked. `scripts/build_working_set.py mask`
+  painted each one's label section grey, so no collector's name or handwriting is published, and
+  `masks.csv` there gives the box and side each was masked by. The download script rebuilds the
+  originals in `data/raw/`.
 - The submitted checkpoints, also in this repository: `models/generator_ema.pt` (13.7 MiB), run
   1's exponential moving average (EMA) generator at epoch 100, and `models/discriminator.pt`
   (10.6 MiB), its discriminator.

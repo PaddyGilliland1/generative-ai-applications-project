@@ -85,7 +85,16 @@ failure flag and its row in the array, so nothing is removed silently.
         --out data/nhm_butterflies_64.npy --crop-failures verdicts.csv \\
         --workers 8
 
-Needs NumPy and Pillow. It never overwrites an existing array or table.
+The photographs the notebook's Figures 1 and 2 show are published with
+their labels masked: the mask command reads the segment rule on each
+original, paints everything past its box grey on the label side and on the
+side where a tray of that shape keeps its labels, and saves the copy with
+masks.csv, the box and side each was masked by.
+
+    python scripts/build_working_set.py mask --out data/figure_photos NAME ...
+
+Needs NumPy and Pillow. It never overwrites an existing array, table or
+masked copy.
 """
 
 import argparse
@@ -100,7 +109,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 import numpy as np
-from PIL import Image
+from PIL import Image, JpegImagePlugin
 
 SIZE = 64
 PROFILE_SIDE = 270
@@ -175,6 +184,12 @@ SPLIT_FIELDS = [
 TABLE_FIELDS = [
     "row", "file_name", "part", "crop_failed", "in_array", "array_row"
 ]
+# The photographs the notebook's figures show are published with their label
+# section painted this grey, and the table beside them keeps the box and the
+# side the rule found on each original.
+MASK_GREY = 128
+MASK_TABLE = "masks.csv"
+MASK_FIELDS = ["file_name", "side", "left", "top", "right", "bottom"]
 
 
 def _check_rgb(rgb, smallest=2):
@@ -1410,6 +1425,73 @@ def load_photograph(path):
         return np.array(im.convert("RGB"), dtype=np.uint8)
 
 
+def mask_label_side(rgb, box, side, grey=MASK_GREY):
+    """A copy of rgb with everything past box on the label side made grey.
+
+    box is (left, top, right, bottom) pixels and side is the label side the
+    crop rule found, or None, when nothing is painted."""
+    out = rgb.copy()
+    left, top, right, bottom = box
+    if side == "bottom":
+        out[bottom:] = grey
+    elif side == "top":
+        out[:top] = grey
+    elif side == "right":
+        out[:, right:] = grey
+    elif side == "left":
+        out[:, :left] = grey
+    return out
+
+
+def label_sides(shape, side):
+    """The sides to mask past the crop, as a list: the side the rule read,
+    and the orientation's own label side, the bottom of a portrait tray or
+    the right of a landscape one, in case the rule read it wrongly."""
+    usual = "bottom" if shape[0] > shape[1] else "right"
+    return [side, usual] if side not in (None, usual) else [usual]
+
+
+def mask_labels(photo, parts):
+    """A copy of photo with every label side past the crop made grey.
+
+    parts holds the segment rule's box and side, as segment_parts gives
+    them. The labels carry collectors' handwriting and names. Nothing inside
+    the box is painted, so the specimen is left as it is."""
+    out = photo
+    for side in label_sides(photo.shape, parts["side"]):
+        out = mask_label_side(out, parts["box"], side)
+    return out
+
+
+def mask_photograph(src, dst):
+    """Save a copy of the JPEG photograph at src to dst with its labels
+    masked, and return the box and side it was masked by, as a dict.
+
+    The rule reads the original, because it reads a masked copy differently.
+    The copy keeps the original's own quantisation tables and chroma
+    subsampling, so what is not painted stays as close to the original as a
+    second JPEG save allows. dst is never overwritten."""
+    dst = Path(dst)
+    if dst.exists():
+        raise FileExistsError(f"{dst} exists, and I never overwrite a copy")
+    with Image.open(src) as im:
+        if im.format != "JPEG":
+            raise ValueError(f"{src} is not a JPEG photograph")
+        qtables = im.quantization
+        subsampling = JpegImagePlugin.get_sampling(im)
+        rgb = np.array(im.convert("RGB"), dtype=np.uint8)
+    parts = segment_parts(rgb)
+    part = dst.with_name(dst.name + ".part")
+    Image.fromarray(mask_labels(rgb, parts)).save(
+        part, format="JPEG", qtables=qtables, subsampling=subsampling
+    )
+    os.replace(part, dst)
+    return {
+        "box": tuple(int(v) for v in parts["box"]),
+        "side": parts["side"],
+    }
+
+
 def _crop_file(job):
     """Load and crop one photograph; job is (path, size, rule), for a pool."""
     path, size, rule = job
@@ -1676,9 +1758,24 @@ def main(argv=None):
     )
     split.add_argument("--size", type=int, default=SIZE)
     split.add_argument("--workers", type=int, default=8)
+    mask = sub.add_parser(
+        "mask",
+        help="save a copy of each named photograph with its labels masked, "
+        "and masks.csv beside them with the box and side each was masked by",
+    )
+    mask.add_argument("names", nargs="+", help="the photographs' file names")
+    mask.add_argument(
+        "--manifest", default="data/manifest_fixed_20261013.csv"
+    )
+    mask.add_argument("--raw-dir", default="data/raw")
+    mask.add_argument(
+        "--out", required=True, help="the folder the copies are saved in"
+    )
     args = parser.parse_args(argv)
     if args.command == "split":
         return _split(args)
+    if args.command == "mask":
+        return _mask(args)
 
     out = Path(args.out)
     table_path = (
@@ -1820,6 +1917,59 @@ def _split(args):
             f"{label} images: {c['with_flagged']} with the flagged crops, "
             f"{c['without_flagged']} without ({c['flagged']} flagged)."
         )
+    return 0
+
+
+def _mask(args):
+    """The mask command: a masked copy of each named photograph, and the
+    table of the box and side each was masked by.
+
+    Each photograph must be a manifest row whose hash its file still has, so
+    every copy is made from the Museum's own file. Returns 0 on success and
+    1 on a refusal, when nothing is written.
+    """
+    out = Path(args.out)
+    for path in [out / n for n in args.names] + [out / MASK_TABLE]:
+        if path.exists():
+            print(
+                f"{path} exists, and I never overwrite a masked copy or its "
+                "table.",
+                file=sys.stderr,
+            )
+            return 1
+    if len(set(args.names)) != len(args.names):
+        print("A name is given twice. Nothing was written.", file=sys.stderr)
+        return 1
+    with open(args.manifest, newline="", encoding="utf-8") as fh:
+        hashes = {row["file_name"]: row["sha256"]
+                  for row in csv.DictReader(fh)}
+    raw = Path(args.raw_dir)
+    for name in args.names:
+        path = raw / name
+        if name not in hashes:
+            problem = f"{name} is not in {args.manifest}"
+        elif not path.is_file():
+            problem = f"{path} is not on disk"
+        elif file_sha256(path) != hashes[name]:
+            problem = f"{path} is not the file its manifest row gives"
+        else:
+            continue
+        print(f"{problem}. Nothing was written.", file=sys.stderr)
+        return 1
+    out.mkdir(parents=True, exist_ok=True)
+    table = []
+    for name in args.names:
+        parts = mask_photograph(raw / name, out / name)
+        left, top, right, bottom = parts["box"]
+        table.append({"file_name": name, "side": parts["side"] or "",
+                      "left": left, "top": top, "right": right,
+                      "bottom": bottom})
+        print(
+            f"{name}: label side {parts['side']}, box {parts['box']}, "
+            f"SHA-256 {file_sha256(out / name)}"
+        )
+    _save_table(out / MASK_TABLE, table, MASK_FIELDS)
+    print(f"Masked {len(table)} photographs into {out}, with {MASK_TABLE}.")
     return 0
 
 

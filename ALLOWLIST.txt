@@ -9,6 +9,7 @@ scripts/download_nhm_images.py
 data/manifest_fixed_20261013.csv
 scripts/build_working_set.py
 data/figure_photos/ATTRIBUTION.md
+data/figure_photos/masks.csv
 data/figure_photos/BMNH-E-1045605_d6e83fa901154aa2a8556973185aa3f6.jpg
 data/figure_photos/BMNH-E-1047517_fb62e2c5752244d482d26d542b69434d.jpg
 data/figure_photos/BMNH-E-1068134_123c1e48052b45b8bcf6c7d8cac84c87.jpg
