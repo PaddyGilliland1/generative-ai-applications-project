@@ -121,7 +121,13 @@ notebook trains on the central processing unit (CPU), far more slowly. On any ma
 rig, an RTX 5090, the training watchdog only warns on a slow epoch, high memory or the 30-minute
 budget, and never stops a run for them.
 
-1. Clone this repository and move into its folder.
+1. Clone this repository and move into its folder:
+
+   ```bash
+   git clone https://github.com/PaddyGilliland1/generative-ai-applications-project
+   cd generative-ai-applications-project
+   ```
+
 2. Create and activate a virtual environment:
 
    ```bash
