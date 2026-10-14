@@ -165,8 +165,12 @@ SEG_PAPER_EDGE = 0.15
 SEG_PAPER_MIN = 0.02
 # The iCollections layout: the labels lie across the tray from the ruler's
 # corner, below a ruler on the left and to the right of one along the foot.
-SEG_LABEL_SIDE = {"left": "bottom", "right": "top", "bottom": "right",
-                  "top": "left"}
+SEG_LABEL_SIDE = {
+    "left": "bottom",
+    "right": "top",
+    "bottom": "right",
+    "top": "left",
+}
 # The crop failure flag, set once on the 200 development images and not
 # tuned after: marks crossing more than a third of a box side, white paper
 # along more than 5 per cent of one, or a specimen outside 5 to 60 per cent
@@ -177,12 +181,28 @@ FLAG_AREA = (0.05, 0.6)
 SEED = 2026
 HELD_OUT_FRACTION = 0.10
 SPLIT_FIELDS = [
-    "row", "file_name", "part", "flagged", "flag_reasons", "edge",
-    "edge_side", "paper", "paper_side", "area", "chosen", "in_array",
-    "array_row", "flagged_row",
+    "row",
+    "file_name",
+    "part",
+    "flagged",
+    "flag_reasons",
+    "edge",
+    "edge_side",
+    "paper",
+    "paper_side",
+    "area",
+    "chosen",
+    "in_array",
+    "array_row",
+    "flagged_row",
 ]
 TABLE_FIELDS = [
-    "row", "file_name", "part", "crop_failed", "in_array", "array_row"
+    "row",
+    "file_name",
+    "part",
+    "crop_failed",
+    "in_array",
+    "array_row",
 ]
 # The photographs the notebook's figures show are published with their label
 # section painted this grey, and the table beside them keeps the box and the
@@ -531,6 +551,7 @@ def label_regions(mask):
     parent = [0]
 
     def root(a):
+        """The root of a's set, halving the path on the way."""
         while parent[a] != a:
             parent[a] = parent[parent[a]]
             a = parent[a]
@@ -579,8 +600,13 @@ def _median3(img):
     """A new int16 copy of img with each channel 3 by 3 median filtered."""
     h, w = img.shape[:2]
     padded = np.pad(img, ((1, 1), (1, 1), (0, 0)), mode="edge")
-    stack = np.stack([padded[dy:dy + h, dx:dx + w]
-                      for dy in range(3) for dx in range(3)])
+    stack = np.stack(
+        [
+            padded[slice(dy, dy + h), slice(dx, dx + w)]
+            for dy in range(3)
+            for dx in range(3)
+        ]
+    )
     return np.median(stack, axis=0).astype(np.int16)
 
 
@@ -616,8 +642,11 @@ def _ruler_depth(counts):
     edge, and may dip for a few lines between a ruler's two scales.
     """
     n = len(counts)
-    hits = [k for k in range(int(SEG_RULER_MOST * n))
-            if counts[k] >= SEG_RULER_STRETCHES]
+    hits = [
+        k
+        for k in range(int(SEG_RULER_MOST * n))
+        if counts[k] >= SEG_RULER_STRETCHES
+    ]
     if not hits or hits[0] >= max(2, int(SEG_RULER_START * n)):
         return 0
     last = hits[0]
@@ -647,8 +676,12 @@ def _ruler_depths(grey, white):
         rest = white_px[y0:y1, x0:x1]
         cols = _stretches_white(rest, 0)
         rows = _stretches_white(rest, 1)
-        counts = {"left": cols, "right": cols[::-1], "top": rows,
-                  "bottom": rows[::-1]}
+        counts = {
+            "left": cols,
+            "right": cols[::-1],
+            "top": rows,
+            "bottom": rows[::-1],
+        }
         found = {}
         for s, c in counts.items():
             d = _ruler_depth(c)
@@ -663,7 +696,9 @@ def _ruler_depths(grey, white):
         lines = _from_side(grey[y0:y1, x0:x1], best)
         d = found[best][1]
         stop = d + max(1, int(SEG_RULER_EDGE * lines.shape[0]))
-        while d < min(stop, lines.shape[0]) and np.median(lines[d]) > white - 40:
+        while (
+            d < min(stop, lines.shape[0]) and np.median(lines[d]) > white - 40
+        ):
             d += 1
         depth[best] = d
     return depth
@@ -681,7 +716,8 @@ def ruler_strips(rgb):
     sh, sw = grey.shape
     return {
         side: d / (sw if side in ("left", "right") else sh)
-        for side, d in depths.items() if d
+        for side, d in depths.items()
+        if d
     }
 
 
@@ -710,16 +746,18 @@ def _tray_distance(sm, pool, home):
     yy, xx = np.mgrid[0:sh, 0:sw]
     x, y = xx / sw - 0.5, yy / sh - 0.5
     terms = np.stack([np.ones_like(x), x, y, x * x, y * y, x * y], -1)
-    colour = _mode_colour(sm[pool & home] if (pool & home).sum() > 50
-                          else sm[pool])
+    colour = _mode_colour(
+        sm[pool & home] if (pool & home).sum() > 50 else sm[pool]
+    )
     near = np.abs(sm - colour).max(axis=2)
     chosen = pool & (near <= SEG_TOL + 8)
     dist = near.astype(float)
     for _ in range(4):
         if chosen.sum() < 30:
             break
-        coef = np.linalg.lstsq(terms[chosen], sm[chosen].astype(float),
-                               rcond=None)[0]
+        coef = np.linalg.lstsq(
+            terms[chosen], sm[chosen].astype(float), rcond=None
+        )[0]
         dist = np.abs(sm - terms @ coef).max(axis=2)
         chosen = pool & (dist <= SEG_TOL)
     return dist
@@ -758,6 +796,8 @@ def _hull(points):
         return pts
 
     def turn(o, a, b):
+        """Positive when o, a, b turn anticlockwise, negative when clockwise
+        and 0 when they lie on a line."""
         return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
 
     lower, upper = [], []
@@ -804,7 +844,7 @@ def _regions(core, grey, raw_grey, sat, white):
     for i in range(1, n + 1):
         if areas[i] < SEG_SMALLEST * sh * sw:
             continue
-        idx = order[bounds[i]:bounds[i + 1]]
+        idx = order[slice(bounds[i], bounds[i + 1])]
         ys, xs = np.divmod(idx, sw)
         x0, y0, x1, y1 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
         shape = np.zeros((y1 - y0 + 2, x1 - x0 + 2), dtype=bool)
@@ -813,24 +853,34 @@ def _regions(core, grey, raw_grey, sat, white):
         outside, _ = label_regions(~shape)
         filled = (outside != outside[0, 0])[1:-1, 1:-1]
         p = np.pad(filled, 1)
-        rim = filled & ~(p[2:, 1:-1] & p[:-2, 1:-1] & p[1:-1, 2:] & p[1:-1, :-2])
+        rim = filled & ~(
+            p[2:, 1:-1] & p[:-2, 1:-1] & p[1:-1, 2:] & p[1:-1, :-2]
+        )
         ry, rx = np.nonzero(rim)
-        corners = [(cx + dx, cy + dy)
-                   for cx, cy in zip(rx.tolist(), ry.tolist())
-                   for dx in (0, 1) for dy in (0, 1)]
+        corners = [
+            (cx + dx, cy + dy)
+            for cx, cy in zip(rx.tolist(), ry.tolist())
+            for dx in (0, 1)
+            for dy in (0, 1)
+        ]
         inside = raw_grey[y0:y1, x0:x1][filled]
         paper = np.median(grey.ravel()[idx])
-        found.append({
-            "id": i,
-            "area": int(areas[i]),
-            "box": (int(x0), int(y0), int(x1), int(y1)),
-            "paper": _paper_box(xs, ys, grey.ravel()[idx] > white,
-                                sat.ravel()[idx] <= 60),
-            "rect": float(filled.sum() / _smallest_rectangle(_hull(corners))),
-            "white": float((grey.ravel()[idx] > white).mean()),
-            "sat": float(np.median(sat.ravel()[idx])),
-            "text": float((inside < paper - 50).mean()),
-        })
+        found.append(
+            {
+                "id": i,
+                "area": int(areas[i]),
+                "box": (int(x0), int(y0), int(x1), int(y1)),
+                "paper": _paper_box(
+                    xs, ys, grey.ravel()[idx] > white, sat.ravel()[idx] <= 60
+                ),
+                "rect": float(
+                    filled.sum() / _smallest_rectangle(_hull(corners))
+                ),
+                "white": float((grey.ravel()[idx] > white).mean()),
+                "sat": float(np.median(sat.ravel()[idx])),
+                "text": float((inside < paper - 50).mean()),
+            }
+        )
     found.sort(key=lambda r: -r["area"])
     return labels, found
 
@@ -847,13 +897,19 @@ def _paper_box(xs, ys, bright, plain):
     paper = bright & plain
     if paper.sum() >= 20:
         xs, ys = xs[paper], ys[paper]
-    return (int(np.percentile(xs, 3)), int(np.percentile(ys, 3)),
-            int(np.percentile(xs, 97)) + 1, int(np.percentile(ys, 97)) + 1)
+    return (
+        int(np.percentile(xs, 3)),
+        int(np.percentile(ys, 3)),
+        int(np.percentile(xs, 97)) + 1,
+        int(np.percentile(ys, 97)) + 1,
+    )
 
 
 def _near_edge(box, side):
     """The edge of box that faces away from side."""
-    return {"bottom": box[1], "top": box[3], "right": box[0], "left": box[2]}[side]
+    return {"bottom": box[1], "top": box[3], "right": box[0], "left": box[2]}[
+        side
+    ]
 
 
 def _beyond(box, line, side, slack):
@@ -873,14 +929,19 @@ def _gap(a, b):
 
 
 def _boxes_overlap(a, b):
+    """True when boxes a and b, each (left, top, right, bottom), overlap."""
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
 def _looks_like_paper(r):
     """A label card by its look alone: a white, plain, rectangular region
     with text texture, wherever it lies."""
-    return (r["rect"] >= SEG_CARD_RECT and r["white"] >= SEG_CARD_WHITE
-            and r["sat"] <= SEG_CARD_SAT and r["text"] >= SEG_TEXT)
+    return (
+        r["rect"] >= SEG_CARD_RECT
+        and r["white"] >= SEG_CARD_WHITE
+        and r["sat"] <= SEG_CARD_SAT
+        and r["text"] >= SEG_TEXT
+    )
 
 
 def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
@@ -899,7 +960,8 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
     labels, regions = _regions(core, grey, raw_grey, sat, white)
 
     def outward(r):
-        """How far across the tray towards the labels r's middle lies, 0 to 1."""
+        """How far across the tray towards the labels r's middle lies,
+        0 to 1."""
         b = r["box"]
         if side in ("top", "bottom"):
             f = ((b[1] + b[3]) / 2 - y0) / max(1, y1 - y0)
@@ -908,13 +970,20 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
         return 1 - f if side in ("top", "left") else f
 
     def label_like(r):
+        """True when region r looks like part of a label: paper by its look,
+        or, with the labels' side known, a white, unsaturated, rectangular
+        and textured region far enough towards that side."""
         if _looks_like_paper(r):
             return True
         if side is None:
             return False
-        return (outward(r) >= SEG_LABEL_PART and r["white"] >= SEG_LABEL_WHITE
-                and r["sat"] <= SEG_LABEL_SAT and r["rect"] >= SEG_LABEL_RECT
-                and r["text"] >= SEG_TEXT)
+        return (
+            outward(r) >= SEG_LABEL_PART
+            and r["white"] >= SEG_LABEL_WHITE
+            and r["sat"] <= SEG_LABEL_SAT
+            and r["rect"] >= SEG_LABEL_RECT
+            and r["text"] >= SEG_TEXT
+        )
 
     found = [r for r in regions if label_like(r)]
     # Two lines on the label side: the label line, from the labels' whole
@@ -926,22 +995,34 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
     if side and line is None:
         middle = (y0 + y1) / 2 if side in ("top", "bottom") else (x0 + x1) / 2
         nearest = min if side in ("bottom", "right") else max
-        edges = [_near_edge(r["box"], side) for r in found
-                 if _beyond(r["box"], middle, side, 0)]
+        edges = [
+            _near_edge(r["box"], side)
+            for r in found
+            if _beyond(r["box"], middle, side, 0)
+        ]
         if edges:
             line = nearest(edges)
-        papers = [_near_edge(r["paper"], side) for r in found
-                  if _beyond(r["paper"], middle, side, 0)]
+        papers = [
+            _near_edge(r["paper"], side)
+            for r in found
+            if _beyond(r["paper"], middle, side, 0)
+        ]
         if papers:
             paper_line = nearest(papers)
     slack = SEG_SLACK * max(sh, sw)
     left = [
-        r for r in regions
+        r
+        for r in regions
         if not label_like(r)
         and not (line is not None and _beyond(r["box"], line, side, slack))
     ]
-    out = {"labels": found, "line": line, "paper_line": paper_line,
-           "chosen": [], "regions": regions}
+    out = {
+        "labels": found,
+        "line": line,
+        "paper_line": paper_line,
+        "chosen": [],
+        "regions": regions,
+    }
     if not left:
         return out
     if side is not None:
@@ -957,12 +1038,18 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
         for r in left:
             if r in chosen:
                 continue
-            if (r["area"] >= SEG_JOIN_AREA * seed["area"]
-                    and _gap(r["box"], box) <= reach):
+            if (
+                r["area"] >= SEG_JOIN_AREA * seed["area"]
+                and _gap(r["box"], box) <= reach
+            ):
                 chosen.append(r)
                 b = r["box"]
-                box = [min(box[0], b[0]), min(box[1], b[1]),
-                       max(box[2], b[2]), max(box[3], b[3])]
+                box = [
+                    min(box[0], b[0]),
+                    min(box[1], b[1]),
+                    max(box[2], b[2]),
+                    max(box[3], b[3]),
+                ]
                 joined = True
     # The opening and the line removal shave a pixel or two off the wing
     # edges, so the regions grow back a little into what was marked, but
@@ -972,8 +1059,16 @@ def _choose(core, clean, grey, raw_grey, sat, white, work, side, line):
     for _ in range(SEG_REACH):
         keep = _grow(keep) & clean & ~others
     ys, xs = np.nonzero(keep)
-    out.update(chosen=chosen, keep=keep, box=(
-        int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+    out.update(
+        chosen=chosen,
+        keep=keep,
+        box=(
+            int(xs.min()),
+            int(ys.min()),
+            int(xs.max()) + 1,
+            int(ys.max()) + 1,
+        ),
+    )
     return out
 
 
@@ -1003,12 +1098,14 @@ def _paper_line(keep, grey, sat, white, work, side):
     if k >= n or counts[k] < 2:
         return None
     total = 0
-    while k < n and counts[k:k + 2].max() >= 2:
+    while k < n and counts[slice(k, k + 2)].max() >= 2:
         total += counts[k]
         k += 1
     if k > 0.5 * n or total < SEG_PAPER_MIN * keep.sum():
         return None
-    return {"bottom": y1 - k, "right": x1 - k, "top": y0 + k, "left": x0 + k}[side]
+    return {"bottom": y1 - k, "right": x1 - k, "top": y0 + k, "left": x0 + k}[
+        side
+    ]
 
 
 def _clear_of(paper, box, own, sx, sy, sides):
@@ -1026,7 +1123,9 @@ def _clear_of(paper, box, own, sx, sy, sides):
     cols = slice(max(0, int(left / sx)), min(sw, int(np.ceil(right / sx))))
     rows = slice(max(0, int(top / sy)), min(sh, int(np.ceil(bottom / sy))))
     if "bottom" in sides:
-        for y in range(int(np.ceil(oy1 / sy)), min(sh, int(np.ceil(bottom / sy)))):
+        for y in range(
+            int(np.ceil(oy1 / sy)), min(sh, int(np.ceil(bottom / sy)))
+        ):
             if paper[y, cols].sum() >= 2:
                 bottom = max(int(np.ceil(oy1)), int((y - 1) * sy))
                 break
@@ -1036,7 +1135,9 @@ def _clear_of(paper, box, own, sx, sy, sides):
                 top = min(int(oy0), int(np.ceil((y + 2) * sy)))
                 break
     if "right" in sides:
-        for x in range(int(np.ceil(ox1 / sx)), min(sw, int(np.ceil(right / sx)))):
+        for x in range(
+            int(np.ceil(ox1 / sx)), min(sw, int(np.ceil(right / sx)))
+        ):
             if paper[rows, x].sum() >= 2:
                 right = max(int(np.ceil(ox1)), int((x - 1) * sx))
                 break
@@ -1108,14 +1209,16 @@ def segment_parts(rgb):
     inside = np.zeros((sh, sw), dtype=bool)
     inside[region] = True
     rulers = [s for s in depth if depth[s]]
-    side = (SEG_LABEL_SIDE[max(rulers, key=lambda s: depth[s])]
-            if rulers else None)
+    side = (
+        SEG_LABEL_SIDE[max(rulers, key=lambda s: depth[s])] if rulers else None
+    )
     # The tray is a plain mid grey, so only such pixels may set its colour.
     pool = inside & (grey > 25) & (grey < white - 5) & (sat <= 45)
     home = inside.copy()
     if side is not None:
-        _from_side(home[region], side)[:int(SEG_HOME * _from_side(
-            home[region], side).shape[0])] = False
+        _from_side(home[region], side)[
+            : int(SEG_HOME * _from_side(home[region], side).shape[0])
+        ] = False
     if pool.sum() > 50:
         dist = _tray_distance(sm, pool, home)
     else:
@@ -1152,12 +1255,16 @@ def segment_parts(rgb):
                 half = "top" if k < n / 2 else "bottom"
             else:
                 half = "left" if k < n / 2 else "right"
-            near_ruler = depth[half] and min(k, n - 1 - k) <= SEG_NEAR_RULER * n
+            near_ruler = (
+                depth[half] and min(k, n - 1 - k) <= SEG_NEAR_RULER * n
+            )
             if not (half == side or near_ruler) or lines[k].mean() < SEG_FULL:
                 continue
             common = _mode_colour(lines_sm[k][lines[k]])
-            plain = (common.max() - common.min() <= SEG_PLAIN
-                     and common.mean() < white - 10)
+            plain = (
+                common.max() - common.min() <= SEG_PLAIN
+                and common.mean() < white - 10
+            )
             full.append((lines, lines_sm, k, common if plain else None))
             if plain:
                 greys.append(common)
@@ -1173,10 +1280,11 @@ def segment_parts(rgb):
     across = _run_lengths(marked, 1)
     down = _run_lengths(marked, 0)
     lines = (
-        (_run_lengths(marked & (across <= SEG_LINE_WIDTH), 0)
-         >= SEG_LINE_LENGTH * sh)
-        | (_run_lengths(marked & (down <= SEG_LINE_WIDTH), 1)
-           >= SEG_LINE_LENGTH * sw)
+        _run_lengths(marked & (across <= SEG_LINE_WIDTH), 0)
+        >= SEG_LINE_LENGTH * sh
+    ) | (
+        _run_lengths(marked & (down <= SEG_LINE_WIDTH), 1)
+        >= SEG_LINE_LENGTH * sw
     )
     clean = marked & ~lines
     core = _grow(_shrink(clean))
@@ -1187,9 +1295,16 @@ def segment_parts(rgb):
         # A label the specimen's box runs into is cut away where its paper
         # begins, so that a scrap of wall joined to it cannot pull the cut
         # into a wing.
-        hits = [_near_edge(r["paper"], side) for r in picked["labels"]
-                if _boxes_overlap(picked["box"], r["paper"])]
-        cuts = [min(hits) if side in ("bottom", "right") else max(hits)] if hits else []
+        hits = [
+            _near_edge(r["paper"], side)
+            for r in picked["labels"]
+            if _boxes_overlap(picked["box"], r["paper"])
+        ]
+        cuts = (
+            [min(hits) if side in ("bottom", "right") else max(hits)]
+            if hits
+            else []
+        )
         paper = _paper_line(picked["keep"], grey, sat, white, work, side)
         if paper is not None:
             cuts.append(paper)
@@ -1199,23 +1314,42 @@ def segment_parts(rgb):
             # within the row before it, so the cut is one row nearer the
             # specimen.
             line += -1 if side in ("bottom", "right") else 1
-            again = _choose(_cut_beyond(core, line, side),
-                            _cut_beyond(clean, line, side),
-                            grey, raw_grey, sat, white, work, side, line)
+            again = _choose(
+                _cut_beyond(core, line, side),
+                _cut_beyond(clean, line, side),
+                grey,
+                raw_grey,
+                sat,
+                white,
+                work,
+                side,
+                line,
+            )
             if again["chosen"]:
                 picked = again
                 labels += again["labels"]
 
     sx, sy = w / sw, h / sh
-    parts = {"scale": (sx, sy), "work": work, "side": side, "clean": clean,
-             "core": core,
-             "regions": picked["regions"], "labels": labels,
-             "chosen": bool(picked["chosen"]), "keep": None, "own": None,
-             "paper": (grey > white) & (sat <= 60)}
+    parts = {
+        "scale": (sx, sy),
+        "work": work,
+        "side": side,
+        "clean": clean,
+        "core": core,
+        "regions": picked["regions"],
+        "labels": labels,
+        "chosen": bool(picked["chosen"]),
+        "keep": None,
+        "own": None,
+        "paper": (grey > white) & (sat <= 60),
+    }
     if not picked["chosen"]:
-        parts["box"] = (int(x0 * sx), int(y0 * sy),
-                        min(w, int(np.ceil(x1 * sx))),
-                        min(h, int(np.ceil(y1 * sy))))
+        parts["box"] = (
+            int(x0 * sx),
+            int(y0 * sy),
+            min(w, int(np.ceil(x1 * sx))),
+            min(h, int(np.ceil(y1 * sy))),
+        )
         return parts
     parts.update(keep=picked["keep"], own=picked["box"])
     bx0, by0, bx1, by1 = picked["box"]
@@ -1251,28 +1385,42 @@ def segment_parts(rgb):
     paper = (grey > white) & (sat <= 60) & ~near
     sides = {s for s in rulers} | ({side} if side else set())
     left, top, right, bottom = _clear_of(
-        paper, (left, top, right, bottom), (bx0, by0, bx1, by1), sx, sy,
-        sides)
+        paper, (left, top, right, bottom), (bx0, by0, bx1, by1), sx, sy, sides
+    )
     # A label beside the specimen, rather than beyond the line, can still
     # catch the margin at a corner: the margin gives way on whichever side
     # costs it least.
     own = (bx0, by0, bx1, by1)
     for r in labels:
-        lx0, ly0, lx1, ly1 = (r["paper"][0] * sx, r["paper"][1] * sy,
-                              r["paper"][2] * sx, r["paper"][3] * sy)
+        lx0, ly0, lx1, ly1 = (
+            r["paper"][0] * sx,
+            r["paper"][1] * sy,
+            r["paper"][2] * sx,
+            r["paper"][3] * sy,
+        )
         if _boxes_overlap(own, (lx0, ly0, lx1, ly1)):
             continue
-        if not _boxes_overlap((left, top, right, bottom), (lx0, ly0, lx1, ly1)):
+        if not _boxes_overlap(
+            (left, top, right, bottom), (lx0, ly0, lx1, ly1)
+        ):
             continue
         options = []
         if lx0 >= bx1:
-            options.append((right - lx0, "right", max(int(np.ceil(bx1)), int(lx0))))
+            options.append(
+                (right - lx0, "right", max(int(np.ceil(bx1)), int(lx0)))
+            )
         if lx1 <= bx0:
-            options.append((lx1 - left, "left", min(int(bx0), int(np.ceil(lx1)))))
+            options.append(
+                (lx1 - left, "left", min(int(bx0), int(np.ceil(lx1))))
+            )
         if ly0 >= by1:
-            options.append((bottom - ly0, "bottom", max(int(np.ceil(by1)), int(ly0))))
+            options.append(
+                (bottom - ly0, "bottom", max(int(np.ceil(by1)), int(ly0)))
+            )
         if ly1 <= by0:
-            options.append((ly1 - top, "top", min(int(by0), int(np.ceil(ly1)))))
+            options.append(
+                (ly1 - top, "top", min(int(by0), int(np.ceil(ly1))))
+            )
         if options:
             _, edge, value = min(options)
             if edge == "right":
@@ -1398,7 +1546,8 @@ def pad_to_square(rgb):
     out = np.empty((side, side, 3), dtype=np.uint8)
     out[:] = np.round(np.median(border, axis=0)).astype(np.uint8)
     y0, x0 = (side - h) // 2, (side - w) // 2
-    out[y0:y0 + h, x0:x0 + w] = rgb
+    y1, x1 = y0 + h, x0 + w
+    out[y0:y1, x0:x1] = rgb
     return out
 
 
@@ -1571,22 +1720,24 @@ def split_table(names, signals, reasons, held_out):
         part = "held_out" if name in held_out else "training"
         flagged = bool(reasons[k])
         sig = signals[k]
-        table.append({
-            "row": k,
-            "file_name": name,
-            "part": part,
-            "flagged": int(flagged),
-            "flag_reasons": "; ".join(reasons[k]),
-            "edge": round(sig["edge"], 4),
-            "edge_side": sig["edge_side"],
-            "paper": round(sig["paper"], 4),
-            "paper_side": sig["paper_side"],
-            "area": round(sig["area"], 4),
-            "chosen": sig["chosen"],
-            "in_array": int(not flagged),
-            "array_row": "" if flagged else next_row[part],
-            "flagged_row": next_flagged if flagged else "",
-        })
+        table.append(
+            {
+                "row": k,
+                "file_name": name,
+                "part": part,
+                "flagged": int(flagged),
+                "flag_reasons": "; ".join(reasons[k]),
+                "edge": round(sig["edge"], 4),
+                "edge_side": sig["edge_side"],
+                "paper": round(sig["paper"], 4),
+                "paper_side": sig["paper_side"],
+                "area": round(sig["area"], 4),
+                "chosen": sig["chosen"],
+                "in_array": int(not flagged),
+                "array_row": "" if flagged else next_row[part],
+                "flagged_row": next_flagged if flagged else "",
+            }
+        )
         if flagged:
             next_flagged += 1
         else:
@@ -1622,7 +1773,7 @@ def held_out_names(names, seed=SEED):
     """
     ordered = sorted(names)
     perm = np.random.default_rng(seed).permutation(len(ordered))
-    return {ordered[i] for i in perm[:held_out_count(len(ordered))]}
+    return {ordered[i] for i in perm[: held_out_count(len(ordered))]}
 
 
 def read_crop_failures(path):
@@ -1654,14 +1805,16 @@ def row_table(names, failures, held_out, exclude=True):
     for k, name in enumerate(names):
         failed = name in failures
         kept = not (failed and exclude)
-        table.append({
-            "row": k,
-            "file_name": name,
-            "part": "held_out" if name in held_out else "training",
-            "crop_failed": int(failed),
-            "in_array": int(kept),
-            "array_row": next_row if kept else "",
-        })
+        table.append(
+            {
+                "row": k,
+                "file_name": name,
+                "part": "held_out" if name in held_out else "training",
+                "crop_failed": int(failed),
+                "in_array": int(kept),
+                "array_row": next_row if kept else "",
+            }
+        )
         next_row += kept
     return table
 
@@ -1727,7 +1880,9 @@ def main(argv=None):
     build.add_argument("--size", type=int, default=SIZE)
     build.add_argument("--workers", type=int, default=8)
     build.add_argument(
-        "--rule", required=True, choices=sorted(RULES),
+        "--rule",
+        required=True,
+        choices=sorted(RULES),
         help="the threshold rule, the fixed box or the segment rule",
     )
     build.add_argument(
@@ -1735,7 +1890,9 @@ def main(argv=None):
         help="a verdicts CSV; its rows marked fail are the crop failures",
     )
     build.add_argument(
-        "--failures", choices=("exclude", "include"), default="exclude",
+        "--failures",
+        choices=("exclude", "include"),
+        default="exclude",
         help="leave crop failures out of the array (default) or keep them",
     )
     build.add_argument(
@@ -1752,7 +1909,8 @@ def main(argv=None):
     )
     split.add_argument("--raw-dir", default="data/raw")
     split.add_argument(
-        "--out", default="data/nhm_butterflies_64",
+        "--out",
+        default="data/nhm_butterflies_64",
         help="the stem: _training.npy, _held_out.npy, _flagged.npy and "
         "_rows.csv are added to it",
     )
@@ -1764,9 +1922,7 @@ def main(argv=None):
         "and masks.csv beside them with the box and side each was masked by",
     )
     mask.add_argument("names", nargs="+", help="the photographs' file names")
-    mask.add_argument(
-        "--manifest", default="data/manifest_fixed_20261013.csv"
-    )
+    mask.add_argument("--manifest", default="data/manifest_fixed_20261013.csv")
     mask.add_argument("--raw-dir", default="data/raw")
     mask.add_argument(
         "--out", required=True, help="the folder the copies are saved in"
@@ -1891,8 +2047,9 @@ def _split(args):
     for part in ("training", "held_out"):
         rows = [r["row"] for r in table if r["in_array"] and r["part"] == part]
         _save_array(paths[part], array[rows])
-    _save_array(paths["flagged"], array[[r["row"] for r in table
-                                         if r["flagged"]]])
+    _save_array(
+        paths["flagged"], array[[r["row"] for r in table if r["flagged"]]]
+    )
     _save_table(paths["rows"], table, SPLIT_FIELDS)
     print(
         f"Cropped and flagged {len(names)} photographs by the segment rule "
@@ -1910,8 +2067,11 @@ def _split(args):
         f"{counts['all']['flagged']} flagged in {paths['rows']}, left out "
         "of both arrays."
     )
-    for part, label in (("training", "Training"), ("held_out", "Held-out"),
-                        ("all", "All")):
+    for part, label in (
+        ("training", "Training"),
+        ("held_out", "Held-out"),
+        ("all", "All"),
+    ):
         c = counts[part]
         print(
             f"{label} images: {c['with_flagged']} with the flagged crops, "
@@ -1941,8 +2101,9 @@ def _mask(args):
         print("A name is given twice. Nothing was written.", file=sys.stderr)
         return 1
     with open(args.manifest, newline="", encoding="utf-8") as fh:
-        hashes = {row["file_name"]: row["sha256"]
-                  for row in csv.DictReader(fh)}
+        hashes = {
+            row["file_name"]: row["sha256"] for row in csv.DictReader(fh)
+        }
     raw = Path(args.raw_dir)
     for name in args.names:
         path = raw / name
@@ -1961,9 +2122,16 @@ def _mask(args):
     for name in args.names:
         parts = mask_photograph(raw / name, out / name)
         left, top, right, bottom = parts["box"]
-        table.append({"file_name": name, "side": parts["side"] or "",
-                      "left": left, "top": top, "right": right,
-                      "bottom": bottom})
+        table.append(
+            {
+                "file_name": name,
+                "side": parts["side"] or "",
+                "left": left,
+                "top": top,
+                "right": right,
+                "bottom": bottom,
+            }
+        )
         print(
             f"{name}: label side {parts['side']}, box {parts['box']}, "
             f"SHA-256 {file_sha256(out / name)}"
