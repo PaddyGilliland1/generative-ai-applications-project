@@ -95,9 +95,9 @@ Sizes are given in mebibytes (MiB), gibibytes (GiB) and megabytes (MB).
 - Also in this repository: `data/crop_audit_600.csv`, the crop audit's verdict for each of the 600
   crops scored by eye before training. Each row gives the verdict (pass, doubtful or fail), the kind
   of failure and who scored it. An AI assistant scored the crops, and I reviewed the results. Task 2
-  counts the failure rate and the crop flag's agreement from this file. And
-  `data/candidates_skipped.csv`, the 2,635 records left out when the
-  candidates were listed, by occurrence ID, catalogue number and reason, which Task 2 counts.
+  counts the failure rate and the crop flag's agreement from this file. The repository also holds
+  `data/candidates_skipped.csv`, which gives the 2,635 records left out when the candidates were
+  listed, each with its occurrence ID, catalogue number and reason. Task 2 counts them.
 - The submitted checkpoints, also in this repository: `models/generator_ema.pt` (13.7 MiB), run
   1's exponential moving average (EMA) generator at epoch 100, and `models/discriminator.pt`
   (10.6 MiB), its discriminator.
