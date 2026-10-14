@@ -155,7 +155,7 @@ CPU run, and it moves mainly with the number of CPU threads. Four runs on 16 thr
 
 On other hardware, or on the CPU, the same seeds can still train a different model and draw
 different samples. The rubric cell in Task 4 checks the samples' pixels against the hash of the
-submitted samples, and if they differ it warns and hides the hand scores and their reasons, which
+submitted samples, and if they differ it warns and hides the rubric scores and their reasons, which
 describe the submitted samples only. The submitted samples, and every result the report quotes,
 are the outputs saved in the committed notebook.
 
