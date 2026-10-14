@@ -86,16 +86,17 @@ Sizes are given in mebibytes (MiB), gibibytes (GiB) and megabytes (MB).
 
 - In this repository: the notebook under both names, the report under both names
   (`Generative_AI_Analysis_Report.pdf` and `module_summary.pdf`), the fixed manifest, both scripts,
-  `requirements.txt`, this README, and the ten photographs Figures 1 and 2 read, in
+  `requirements.txt` and this README. It also holds the ten photographs Figures 1 and 2 read, in
   `data/figure_photos/` (2.2 MiB), with `ATTRIBUTION.md` giving the Museum's CC BY 4.0
   attribution line for each. They are modified: labels masked. `scripts/build_working_set.py mask`
   painted each one's label section grey, so no collector's name or handwriting is published, and
   `masks.csv` there gives the box and side each was masked by. The download script rebuilds the
   originals in `data/raw/`.
 - Also in this repository: `data/crop_audit_600.csv`, the crop audit's verdict for each of the 600
-  crops scored by eye before training (pass, doubtful or fail, the kind of failure, and that an AI
-  assistant scored them and I reviewed the results), from which Task 2 counts the failure rate and
-  the crop flag's agreement. And `data/candidates_skipped.csv`, the 2,635 records left out when the
+  crops scored by eye before training. Each row gives the verdict (pass, doubtful or fail), the kind
+  of failure and who scored it. An AI assistant scored the crops, and I reviewed the results. Task 2
+  counts the failure rate and the crop flag's agreement from this file. And
+  `data/candidates_skipped.csv`, the 2,635 records left out when the
   candidates were listed, by occurrence ID, catalogue number and reason, which Task 2 counts.
 - The submitted checkpoints, also in this repository: `models/generator_ema.pt` (13.7 MiB), run
   1's exponential moving average (EMA) generator at epoch 100, and `models/discriminator.pt`
