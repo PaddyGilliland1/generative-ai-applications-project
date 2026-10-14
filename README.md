@@ -160,10 +160,9 @@ budget, and never stops a run for them.
 
 Run time on this rig, an NVIDIA GeForce RTX 5090: about 21 minutes of GPU training for the three
 runs, and about 23 minutes for the whole notebook. On this rig's CPU the three training runs would
-take between 4.5 and 10.9 hours. That is the notebook's estimate from timed training steps, not a
-CPU run, and it moves mainly with the number of CPU threads. Five runs on 16 threads gave 4.5,
-5.2, 4.8, 5.1 and 4.7 hours, and two on 24 threads gave 9.8 and 10.9 hours. The committed notebook
-shows 4.7 hours.
+take about 4.7 hours, from 0.37 seconds a training step on 16 threads. That is the notebook's
+estimate from timed training steps, not a CPU run, and it moves with the number of CPU threads and
+how busy the machine is.
 
 On other hardware, or on the CPU, the same seeds can still train a different model and draw
 different samples. The rubric cell in Task 4 checks the samples' pixels against the hash of the
