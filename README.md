@@ -116,8 +116,10 @@ Sizes are given in mebibytes (MiB), gibibytes (GiB) and megabytes (MB).
 These steps assume Linux, or Windows through Windows Subsystem for Linux (WSL2), with Python 3.12
 (tested on 3.12.3), an NVIDIA graphics processing unit (GPU) with CUDA, and Git. That is the
 environment `requirements.txt` was frozen from, so it pins Linux CUDA wheels, such as `triton`
-and the `nvidia-*` packages, which do not install on native Windows or macOS. Without a GPU the
-notebook trains on the central processing unit (CPU), far more slowly.
+and the `nvidia-*` packages, which do not install on native Windows or macOS. The PyTorch wheels
+are built for CUDA 13.0, so the GPU's driver must support CUDA 13.0, or PyTorch sees no GPU. This
+rig's driver supports CUDA 13.4. Without a GPU the notebook trains on the central processing unit
+(CPU), far more slowly.
 
 This rig is an NVIDIA GeForce RTX 5090 with 32,607 MiB of memory, an Intel Core Ultra 9 285K
 processor with 24 cores, and 93.9 GiB of random access memory (RAM) as WSL sees it. The notebook
