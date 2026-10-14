@@ -53,3 +53,7 @@ Thumbs.db
 # The submitted checkpoints: run 1's EMA generator at epoch 100 and its discriminator.
 !models/generator_ema.pt
 !models/discriminator.pt
+# The crop audit's verdict for each of the 600 crops scored by eye, and the records left out
+# when the download's candidates were listed.
+!data/crop_audit_600.csv
+!data/candidates_skipped.csv

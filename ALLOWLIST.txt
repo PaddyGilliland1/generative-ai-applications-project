@@ -22,3 +22,5 @@ data/figure_photos/BMNH-E-1300427_8adac3fb808f4ce3801cf855a8cb5acc.jpg
 data/figure_photos/BMNH-E-502316_cca4346f15344db88ea75a673b9e4e98.jpg
 models/generator_ema.pt
 models/discriminator.pt
+data/crop_audit_600.csv
+data/candidates_skipped.csv
