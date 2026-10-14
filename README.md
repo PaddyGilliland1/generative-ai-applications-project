@@ -84,7 +84,8 @@
 
 Sizes are given in mebibytes (MiB), gibibytes (GiB) and megabytes (MB).
 
-- In this repository: the notebook under both names, the fixed manifest, both scripts,
+- In this repository: the notebook under both names, the report under both names
+  (`Generative_AI_Analysis_Report.pdf` and `module_summary.pdf`), the fixed manifest, both scripts,
   `requirements.txt`, this README, and the ten photographs Figures 1 and 2 read, in
   `data/figure_photos/` (2.2 MiB), with `ATTRIBUTION.md` giving the Museum's CC BY 4.0
   attribution line for each. They are modified: labels masked. `scripts/build_working_set.py mask`

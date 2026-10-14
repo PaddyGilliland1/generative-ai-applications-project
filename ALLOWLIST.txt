@@ -24,3 +24,5 @@ models/generator_ema.pt
 models/discriminator.pt
 data/crop_audit_600.csv
 data/candidates_skipped.csv
+Generative_AI_Analysis_Report.pdf
+module_summary.pdf
