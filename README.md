@@ -6,7 +6,7 @@
 
 **The data:** I used 22,000 Natural History Museum photographs of British and Irish butterfly specimens, licensed CC BY 4.0, and 19,800 of them trained the model.
 
-**The model:** The generator and discriminator follow my coursework DCGAN, and one training run took about five minutes on one graphics card.
+**The model:** The generator and discriminator follow my coursework DCGAN, and one training run took about six and a half minutes on one graphics card.
 
 **The result:** Most of the 64 numbered samples read as plausible museum specimens, and none crossed my nearest-neighbour copy threshold.
 
