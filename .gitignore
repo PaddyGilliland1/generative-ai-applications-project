@@ -46,3 +46,6 @@ Thumbs.db
 
 # PDF files are not ignored: the report PDF is a deliverable.
 !data/manifest_fixed_20261013.csv
+# The submitted checkpoints: run 1's EMA generator at epoch 100 and its discriminator.
+!models/generator_ema.pt
+!models/discriminator.pt
