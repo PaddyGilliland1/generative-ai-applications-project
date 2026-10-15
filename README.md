@@ -158,9 +158,9 @@ budget, and never stops a run for them.
    jupyter notebook generative_model.ipynb
    ```
 
-Run time on this rig, an NVIDIA GeForce RTX 5090: about 21 minutes of GPU training for the three
+Run time on this rig, an NVIDIA GeForce RTX 5090: about 20 minutes of GPU training for the three
 runs, and about 23 minutes for the whole notebook. On this rig's CPU the three training runs would
-take about 4.7 hours, from 0.37 seconds a training step on 16 threads. That is the notebook's
+take about 4.9 hours, from 0.38 seconds a training step on 16 threads. That is the notebook's
 estimate from timed training steps, not a CPU run, and it moves with the number of CPU threads and
 how busy the machine is.
 
