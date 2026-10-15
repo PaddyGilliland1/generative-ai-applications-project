@@ -158,15 +158,15 @@ budget, and never stops a run for them.
    jupyter notebook generative_model.ipynb
    ```
 
-Run time on this rig, an NVIDIA GeForce RTX 5090: about 20 minutes of GPU training for the three
+Run time on this rig, an NVIDIA GeForce RTX 5090: about 22 minutes of GPU training for the three
 runs, and about 23 minutes for the whole notebook. On this rig's CPU the three training runs would
-take about 4.9 hours, from 0.38 seconds a training step on 16 threads. That is the notebook's
+take about 4.8 hours, from 0.38 seconds a training step on 16 threads. That is the notebook's
 estimate from timed training steps, not a CPU run, and it moves with the number of CPU threads and
 how busy the machine is.
 
 On other hardware, or on the CPU, the same seeds can still train a different model and draw
-different samples. The rubric cell in Task 4 checks the samples' pixels against the hash of the
-submitted samples, and if they differ it warns and hides the rubric scores and their reasons, which
+different samples. The scoring cell in Task 4 checks the samples' pixels against the hash of the
+submitted samples, and if they differ it warns and hides the scores and their reasons, which
 describe the submitted samples only. The submitted samples, and every result the report quotes,
 are the outputs saved in the committed notebook.
 
