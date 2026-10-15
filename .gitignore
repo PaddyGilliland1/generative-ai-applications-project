@@ -14,8 +14,11 @@
 *.pickle
 *.h5
 *.hdf5
-data/
+data/*
 datasets/
+
+# Run outputs, rebuilt by every run of the notebook: checkpoints and saved figures
+outputs/
 
 # Model weights
 *.pt
@@ -42,3 +45,15 @@ __pycache__/
 Thumbs.db
 
 # PDF files are not ignored: the report PDF is a deliverable.
+!data/manifest_fixed_20261013.csv
+# The photographs Figures 1 and 2 read, with their labels masked, their attribution file and
+# masks.csv, the box and side each was masked by.
+!data/figure_photos/
+!data/figure_photos/masks.csv
+# The submitted checkpoints: run 1's EMA generator at epoch 100 and its discriminator.
+!models/generator_ema.pt
+!models/discriminator.pt
+# The crop audit's verdict for each of the 600 crops scored by eye, and the records left out
+# when the download's candidates were listed.
+!data/crop_audit_600.csv
+!data/candidates_skipped.csv
